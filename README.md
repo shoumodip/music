@@ -37,6 +37,7 @@ Artist 2
 	...
 ```
 
+## Keys
 | Key | Description |
 | --- | ----------- |
 | <kbd>q</kbd> | Quit |
