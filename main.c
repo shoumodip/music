@@ -752,15 +752,6 @@ void app_draw(App *app) {
         snprintf(header, sizeof(header), "%s", mpd_song_get_uri(song));
       }
       tui_print_name(1, 1, width - 2, str_from_cstr(header), attr);
-
-      unsigned int duration = mpd_song_get_duration(song);
-      unsigned int elapsed = mpd_status_get_elapsed_time(status);
-
-      snprintf(header, sizeof(header), "   %u:%02u/%u:%02u", elapsed / 60, elapsed % 60,
-               duration / 60, duration % 60);
-
-      Str clock = str_from_cstr(header);
-      tui_print_name(1, width - clock.size, clock.size, clock, attr);
     }
 
     if (song) {
