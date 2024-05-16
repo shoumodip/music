@@ -621,10 +621,7 @@ void app_init(App *app) {
     }
   }
 
-  app->mpd = mpd_connection_new(NULL, 0, 0);
-  if (!app->mpd || mpd_connection_get_error(app->mpd) != MPD_ERROR_SUCCESS) {
-    app_set_status(app, STATUS_ERROR, "Error: could not connect to mpd");
-  }
+  app_connect_mpd(app);
 }
 
 void app_exit(App *app) {
