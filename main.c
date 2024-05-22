@@ -1029,7 +1029,14 @@ void app_loop(App *app) {
 }
 
 // Main
-int main(void) {
+int main(int argc, char **argv) {
+  if (argc > 1) {
+    if (chdir(argv[1]) < 0) {
+      fprintf(stderr, "Error: could not change directory to '%s'\n", argv[1]);
+      exit(1);
+    }
+  }
+
   static App app = {0};
   app_init(&app);
   app_loop(&app);
