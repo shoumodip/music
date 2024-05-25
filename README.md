@@ -4,8 +4,7 @@ Dotfile based music download and management system
 ## Build
 Depends on the following:
 
-- [TagLib](https://taglib.org/)
-- [ncurses](https://invisible-island.net/ncurses/)
+- [raylib](https://www.raylib.com/)
 - [libmpdclient](https://www.musicpd.org/libs/libmpdclient/)
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) (optional, will be called as an external process)
 
@@ -41,12 +40,6 @@ Artist 2
 | Key | Description |
 | --- | ----------- |
 | <kbd>q</kbd> | Quit |
-| <kbd>j</kbd> | Select next item in the current column |
-| <kbd>k</kbd> | Select previous item in the current column |
-| <kbd>l</kbd> | Select the next column |
-| <kbd>h</kbd> | Select the previous column |
-| <kbd>t</kbd> | Save tags for the current album/song |
-| <kbd>Enter</kbd> | Play current album/song |
 | <kbd>Space</kbd> | Play/Pause |
 | <kbd>n</kbd> | Next song |
 | <kbd>p</kbd> | Previous song |
