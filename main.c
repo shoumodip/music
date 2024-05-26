@@ -883,9 +883,13 @@ void app_loop(App *app) {
   Artist *current_artist = NULL;
 
   float scroll[3] = {0};
-  enum mpd_state state = app_mpd_get_state(app);
 
-  double last_time = 0.0;
+  enum mpd_state state = MPD_STATE_UNKNOWN;
+  if (app->mpd) {
+    app_mpd_get_state(app);
+  }
+
+  float clock = 0.0;
   while (!WindowShouldClose()) {
     int width = GetScreenWidth();
     int height = GetScreenHeight() - ROW_SIZE;
@@ -985,10 +989,10 @@ void app_loop(App *app) {
       // Status
       DrawRectangle(0, height, width, ROW_SIZE, STATUSLINE_COLOR);
       if (app->mpd) {
-        double current_time = GetTime();
-        if (current_time - last_time >= 1.0) {
+        clock += GetFrameTime();
+        if (clock >= 1.0) {
           state = app_mpd_get_state(app);
-          last_time = current_time;
+          clock = 0.0;
         }
 
         Rectangle rect = {
