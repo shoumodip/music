@@ -489,7 +489,9 @@ typedef struct {
   struct mpd_connection *mpd;
 
   Font font;
-  int font_sizes[127 - 32];
+  int glyphs[127 - 32];
+
+  Vector2 mouse;
 } App;
 
 bool app_execute(App *app, pid_t *process, char *const *args) {
@@ -679,7 +681,7 @@ void app_init(App *app) {
   app->font = LoadFontFromMemory(".ttf", font, font_len, FONT_SIZE, 0, 0);
   for (char ch = 32; ch < 127; ch++) {
     GlyphInfo info = GetGlyphInfo(app->font, ch);
-    app->font_sizes[ch - 32] = info.advanceX;
+    app->glyphs[ch - 32] = info.advanceX;
   }
 
   app->library.config = LoadFileText(".config");
@@ -723,7 +725,7 @@ void app_exit(App *app) {
 size_t app_fit_text(App *app, Str str, int bound, Buffer *buffer, size_t *real_size) {
   int size = 0;
   for (size_t i = 0; i < str.size; i++) {
-    int final = size + app->font_sizes[str.data[i] - 32];
+    int final = size + app->glyphs[str.data[i] - 32];
     if (final >= bound - 2 * FONT_PAD) {
       str.size = i;
       break;
@@ -752,6 +754,20 @@ void app_draw_text(App *app, Rectangle rect, Str str, int bound, Buffer *buffer,
   DrawTextEx(app->font, buffer->data, position, FONT_SIZE, 0, color);
 }
 
+bool app_draw_tooltip(App *app, Rectangle rect, const char *label) {
+  bool hover = CheckCollisionPointRec(app->mouse, rect);
+  if (hover) {
+    Vector2 size = MeasureTextEx(app->font, label, FONT_SIZE, 0);
+
+    Vector2 position = {rect.x, rect.y - ROW_SIZE};
+    DrawRectangle(position.x - FONT_PAD, position.y - FONT_PAD, size.x + 2 * FONT_PAD,
+                  size.y + 2 * FONT_PAD, STATUSLINE_COLOR);
+    DrawTextEx(app->font, label, position, FONT_SIZE, 0, FOREGROUND_COLOR);
+  }
+
+  return hover;
+}
+
 bool app_draw_name_button(App *app, Rectangle rect, char *name, Buffer *buffer, Vector2 mouse) {
   bool hover = CheckCollisionPointRec(mouse, rect);
   if (hover) {
@@ -762,7 +778,7 @@ bool app_draw_name_button(App *app, Rectangle rect, char *name, Buffer *buffer, 
   return hover;
 }
 
-bool app_draw_play_button(Rectangle rect, Vector2 mouse, enum mpd_state state) {
+bool app_draw_play_button(App *app, Rectangle rect, enum mpd_state state) {
   Color color = state > 1 ? FOREGROUND_COLOR : DISABLED_COLOR;
   if (state == MPD_STATE_PLAY) {
     DrawRectangle(rect.x, rect.y, rect.width / 3, rect.height, color);
@@ -774,10 +790,11 @@ bool app_draw_play_button(Rectangle rect, Vector2 mouse, enum mpd_state state) {
     DrawTriangle(a, b, c, color);
   }
 
-  return CheckCollisionPointRec(mouse, rect) && IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
+  const char *label = state == MPD_STATE_PLAY ? "Pause (space)" : "Play (space)";
+  return app_draw_tooltip(app, rect, label) && IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
 }
 
-bool app_draw_next_button(Rectangle rect, Vector2 mouse, enum mpd_state state, bool next) {
+bool app_draw_next_button(App *app, Rectangle rect, enum mpd_state state, bool next) {
   int thick = 2;
   int padding = 2;
 
@@ -802,10 +819,11 @@ bool app_draw_next_button(Rectangle rect, Vector2 mouse, enum mpd_state state, b
     DrawLineEx(start, end, thick, color);
   }
 
-  return CheckCollisionPointRec(mouse, rect) && IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
+  const char *label = next ? "Next (n)" : "Previous (p)";
+  return app_draw_tooltip(app, rect, label) && IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
 }
 
-bool app_draw_seek_button(Rectangle rect, Vector2 mouse, enum mpd_state state, bool forward) {
+bool app_draw_seek_button(App *app, Rectangle rect, enum mpd_state state, bool forward) {
   int thick = 2;
   int padding = 2;
 
@@ -830,7 +848,8 @@ bool app_draw_seek_button(Rectangle rect, Vector2 mouse, enum mpd_state state, b
   DrawLineEx(a, b, thick, color);
   DrawLineEx(b, c, thick, color);
 
-  return CheckCollisionPointRec(mouse, rect) && IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
+  const char *label = forward ? "Forward 5s (f)" : "Backward 5s (b)";
+  return app_draw_tooltip(app, rect, label) && IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
 }
 
 void app_draw_popups(App *app, int width, int height, Buffer *buffer) {
@@ -886,7 +905,7 @@ void app_loop(App *app) {
 
   enum mpd_state state = MPD_STATE_UNKNOWN;
   if (app->mpd) {
-    app_mpd_get_state(app);
+    state = app_mpd_get_state(app);
   }
 
   float clock = 0.0;
@@ -894,7 +913,7 @@ void app_loop(App *app) {
     int width = GetScreenWidth();
     int height = GetScreenHeight() - ROW_SIZE;
     float wheel = GetMouseWheelMove() * 20;
-    Vector2 mouse = GetMousePosition();
+    app->mouse = GetMousePosition();
 
     BeginDrawing();
     {
@@ -905,7 +924,7 @@ void app_loop(App *app) {
 
       // Artists
       {
-        if (wheel != 0.0 && mouse.x >= width * 0.0 / 3 && mouse.x < width * 1.0 / 3) {
+        if (wheel != 0.0 && app->mouse.x >= width * 0.0 / 3 && app->mouse.x < width * 1.0 / 3) {
           scroll_clamp(&scroll[0], wheel, app->library.count, height);
         }
 
@@ -918,14 +937,14 @@ void app_loop(App *app) {
             ROW_SIZE,
           };
 
-          if (app_draw_name_button(app, rect, artist->name, &buffer, mouse)) {
+          if (app_draw_name_button(app, rect, artist->name, &buffer, app->mouse)) {
             current_artist = artist;
           }
         }
       }
 
       if (current_artist) {
-        if (wheel != 0.0 && mouse.x >= width * 1.0 / 3 && mouse.x < width * 2.0 / 3) {
+        if (wheel != 0.0 && app->mouse.x >= width * 1.0 / 3 && app->mouse.x < width * 2.0 / 3) {
           scroll_clamp(&scroll[1], wheel, current_artist->count, height);
         }
 
@@ -939,7 +958,7 @@ void app_loop(App *app) {
             ROW_SIZE,
           };
 
-          if (app_draw_name_button(app, rect, album->name, &buffer, mouse)) {
+          if (app_draw_name_button(app, rect, album->name, &buffer, app->mouse)) {
             current_album = album;
             if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT) && album->ready) {
               app_mpd_load_album(app, current_artist, current_album, &buffer);
@@ -950,7 +969,7 @@ void app_loop(App *app) {
         // Songs
         if (current_album) {
           if (current_album->ready) {
-            if (wheel != 0.0 && mouse.x >= width * 2.0 / 3 && mouse.x < width * 3.0 / 3) {
+            if (wheel != 0.0 && app->mouse.x >= width * 2.0 / 3 && app->mouse.x < width * 3.0 / 3) {
               scroll_clamp(&scroll[2], wheel, current_album->songs.count, height);
             }
 
@@ -963,7 +982,7 @@ void app_loop(App *app) {
                 ROW_SIZE,
               };
 
-              if (app_draw_name_button(app, rect, song->name, &buffer, mouse)) {
+              if (app_draw_name_button(app, rect, song->name, &buffer, app->mouse)) {
                 if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
                   app_mpd_load_song(app, current_artist, current_album, song, &buffer);
                 }
@@ -1003,35 +1022,35 @@ void app_loop(App *app) {
         };
 
         rect.x = (width - rect.width) / 2 + 2 * ROW_SIZE;
-        if (app_draw_seek_button(rect, mouse, state, true) || IsKeyReleased(KEY_PERIOD)) {
+        if (app_draw_seek_button(app, rect, state, true) || IsKeyReleased(KEY_F)) {
           mpd_run_seek_current(app->mpd, 5.0, true);
           app_mpd_check_error(app);
           state = app_mpd_get_state(app);
         }
 
         rect.x -= ROW_SIZE;
-        if (app_draw_next_button(rect, mouse, state, true) || IsKeyReleased(KEY_N)) {
+        if (app_draw_next_button(app, rect, state, true) || IsKeyReleased(KEY_N)) {
           mpd_run_next(app->mpd);
           app_mpd_check_error(app);
           state = app_mpd_get_state(app);
         }
 
         rect.x -= ROW_SIZE;
-        if (app_draw_play_button(rect, mouse, state) || IsKeyReleased(KEY_SPACE)) {
+        if (app_draw_play_button(app, rect, state) || IsKeyReleased(KEY_SPACE)) {
           mpd_run_toggle_pause(app->mpd);
           app_mpd_check_error(app);
           state = app_mpd_get_state(app);
         }
 
         rect.x -= ROW_SIZE;
-        if (app_draw_next_button(rect, mouse, state, false) || IsKeyReleased(KEY_P)) {
+        if (app_draw_next_button(app, rect, state, false) || IsKeyReleased(KEY_P)) {
           mpd_run_previous(app->mpd);
           app_mpd_check_error(app);
           state = app_mpd_get_state(app);
         }
 
         rect.x -= ROW_SIZE;
-        if (app_draw_seek_button(rect, mouse, state, false) || IsKeyReleased(KEY_COMMA)) {
+        if (app_draw_seek_button(app, rect, state, false) || IsKeyReleased(KEY_B)) {
           mpd_run_seek_current(app->mpd, -5.0, true);
           app_mpd_check_error(app);
           state = app_mpd_get_state(app);
