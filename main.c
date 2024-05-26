@@ -491,6 +491,7 @@ typedef struct {
   Font font;
   int glyphs[127 - 32];
 
+  Buffer buffer;
   Vector2 mouse;
 } App;
 
@@ -615,22 +616,22 @@ enum mpd_state app_mpd_get_state(App *app) {
   return MPD_STATE_UNKNOWN;
 }
 
-void app_mpd_load_song(App *app, Artist *artist, Album *album, Song *song, Buffer *buffer) {
+void app_mpd_load_song(App *app, Artist *artist, Album *album, Song *song) {
   if (!app->mpd) {
     return;
   }
 
-  buffer->count = 0;
-  buffer_push_string(buffer, artist->name);
-  list_append(buffer, '/');
-  buffer_push_string(buffer, album->name);
-  list_append(buffer, '/');
-  buffer_push_string(buffer, song->path);
-  list_append(buffer, '\0');
+  app->buffer.count = 0;
+  buffer_push_string(&app->buffer, artist->name);
+  list_append(&app->buffer, '/');
+  buffer_push_string(&app->buffer, album->name);
+  list_append(&app->buffer, '/');
+  buffer_push_string(&app->buffer, song->path);
+  list_append(&app->buffer, '\0');
 
   mpd_command_list_begin(app->mpd, true);
   mpd_send_clear(app->mpd);
-  mpd_send_add(app->mpd, buffer->data);
+  mpd_send_add(app->mpd, app->buffer.data);
   mpd_send_play(app->mpd);
   mpd_command_list_end(app->mpd);
   mpd_response_finish(app->mpd);
@@ -640,27 +641,27 @@ void app_mpd_load_song(App *app, Artist *artist, Album *album, Song *song, Buffe
   }
 }
 
-void app_mpd_load_album(App *app, Artist *artist, Album *album, Buffer *buffer) {
+void app_mpd_load_album(App *app, Artist *artist, Album *album) {
   if (!app->mpd || album->songs.count == 0) {
     return;
   }
 
-  buffer->count = 0;
-  buffer_push_string(buffer, artist->name);
-  list_append(buffer, '/');
-  buffer_push_string(buffer, album->name);
-  list_append(buffer, '/');
+  app->buffer.count = 0;
+  buffer_push_string(&app->buffer, artist->name);
+  list_append(&app->buffer, '/');
+  buffer_push_string(&app->buffer, album->name);
+  list_append(&app->buffer, '/');
 
   mpd_command_list_begin(app->mpd, true);
   mpd_send_clear(app->mpd);
 
-  size_t start = buffer->count;
+  size_t start = app->buffer.count;
   for (size_t i = 0; i < album->songs.count; i++) {
-    buffer->count = start;
-    buffer_push_string(buffer, album->songs.data[i].path);
-    list_append(buffer, '\0');
+    app->buffer.count = start;
+    buffer_push_string(&app->buffer, album->songs.data[i].path);
+    list_append(&app->buffer, '\0');
 
-    mpd_send_add(app->mpd, buffer->data);
+    mpd_send_add(app->mpd, app->buffer.data);
   }
 
   mpd_send_play(app->mpd);
@@ -710,6 +711,8 @@ void app_exit(App *app) {
     mpd_connection_free(app->mpd);
   }
 
+  list_free(&app->buffer);
+
   library_save_links(&app->library, ".links");
   library_free(&app->library);
 
@@ -722,36 +725,38 @@ void app_exit(App *app) {
   }
 }
 
-size_t app_fit_text(App *app, Str str, int bound, Buffer *buffer, size_t *real_size) {
+size_t app_fit_text(App *app, const char *text, int bound, size_t *real_size) {
+  const char *head = text;
+
   int size = 0;
-  for (size_t i = 0; i < str.size; i++) {
-    int final = size + app->glyphs[str.data[i] - 32];
+  while (head && *head) {
+    int final = size + app->glyphs[*head - 32];
     if (final >= bound - 2 * FONT_PAD) {
-      str.size = i;
       break;
     }
     size = final;
+    head++;
   }
 
   if (real_size) {
     *real_size = size;
   }
 
-  return str.size;
+  return head - text;
 }
 
-void app_draw_text(App *app, Rectangle rect, Str str, int bound, Buffer *buffer, Color color) {
+void app_draw_text(App *app, Rectangle rect, const char *text, int bound, Color color) {
   Vector2 position = {
     rect.x + FONT_PAD,
     rect.y + (rect.height - FONT_SIZE) / 2.0,
   };
-  size_t end = app_fit_text(app, str, bound, buffer, NULL);
+  size_t end = app_fit_text(app, text, bound, NULL);
 
-  buffer->count = 0;
-  list_append_many(buffer, str.data, end);
-  list_append(buffer, '\0');
+  app->buffer.count = 0;
+  list_append_many(&app->buffer, text, end);
+  list_append(&app->buffer, '\0');
 
-  DrawTextEx(app->font, buffer->data, position, FONT_SIZE, 0, color);
+  DrawTextEx(app->font, app->buffer.data, position, FONT_SIZE, 0, color);
 }
 
 bool app_draw_tooltip(App *app, Rectangle rect, const char *label) {
@@ -768,13 +773,13 @@ bool app_draw_tooltip(App *app, Rectangle rect, const char *label) {
   return hover;
 }
 
-bool app_draw_name_button(App *app, Rectangle rect, char *name, Buffer *buffer, Vector2 mouse) {
+bool app_draw_name_button(App *app, Rectangle rect, char *name, Vector2 mouse) {
   bool hover = CheckCollisionPointRec(mouse, rect);
   if (hover) {
     DrawRectangleRec(rect, HOVER_COLOR);
   }
 
-  app_draw_text(app, rect, str_from_cstr(name), rect.width, buffer, FOREGROUND_COLOR);
+  app_draw_text(app, rect, name, rect.width, FOREGROUND_COLOR);
   return hover;
 }
 
@@ -852,7 +857,7 @@ bool app_draw_seek_button(App *app, Rectangle rect, enum mpd_state state, bool f
   return app_draw_tooltip(app, rect, label) && IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
 }
 
-void app_draw_popups(App *app, int width, int height, Buffer *buffer) {
+void app_draw_popups(App *app, int width, int height) {
   float dt = GetFrameTime();
   if (app->popups.slide > 0) {
     app->popups.slide -= dt;
@@ -865,11 +870,11 @@ void app_draw_popups(App *app, int width, int height, Buffer *buffer) {
     Popup *popup = popups_get(&app->popups, i);
     popup->lifetime -= dt;
 
-    popup_render(popup, buffer);
+    popup_render(popup, &app->buffer);
 
     size_t size, end;
-    end = app_fit_text(app, str_from_cstr(buffer->data), width / 3.0 - 2 * FONT_PAD, buffer, &size);
-    buffer->data[end] = '\0';
+    end = app_fit_text(app, app->buffer.data, width / 3.0 - 2 * FONT_PAD, &size);
+    app->buffer.data[end] = '\0';
 
     Rectangle boundary = {
       .x = width - size - 3 * FONT_PAD,
@@ -886,7 +891,7 @@ void app_draw_popups(App *app, int width, int height, Buffer *buffer) {
       .x = boundary.x + boundary.width / 2 - size / 2.0,
       .y = boundary.y + boundary.height / 2 - FONT_SIZE / 2.0,
     };
-    DrawTextEx(app->font, buffer->data, position, FONT_SIZE, 0,
+    DrawTextEx(app->font, app->buffer.data, position, FONT_SIZE, 0,
                ColorAlpha(BACKGROUND_COLOR, alpha));
   }
 
@@ -896,8 +901,6 @@ void app_draw_popups(App *app, int width, int height, Buffer *buffer) {
 }
 
 void app_loop(App *app) {
-  Buffer buffer = {0};
-
   Album *current_album = NULL;
   Artist *current_artist = NULL;
 
@@ -937,7 +940,7 @@ void app_loop(App *app) {
             ROW_SIZE,
           };
 
-          if (app_draw_name_button(app, rect, artist->name, &buffer, app->mouse)) {
+          if (app_draw_name_button(app, rect, artist->name, app->mouse)) {
             current_artist = artist;
           }
         }
@@ -958,10 +961,10 @@ void app_loop(App *app) {
             ROW_SIZE,
           };
 
-          if (app_draw_name_button(app, rect, album->name, &buffer, app->mouse)) {
+          if (app_draw_name_button(app, rect, album->name, app->mouse)) {
             current_album = album;
             if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT) && album->ready) {
-              app_mpd_load_album(app, current_artist, current_album, &buffer);
+              app_mpd_load_album(app, current_artist, current_album);
             }
           }
         }
@@ -982,9 +985,9 @@ void app_loop(App *app) {
                 ROW_SIZE,
               };
 
-              if (app_draw_name_button(app, rect, song->name, &buffer, app->mouse)) {
+              if (app_draw_name_button(app, rect, song->name, app->mouse)) {
                 if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
-                  app_mpd_load_song(app, current_artist, current_album, song, &buffer);
+                  app_mpd_load_song(app, current_artist, current_album, song);
                 }
               }
             }
@@ -996,14 +999,13 @@ void app_loop(App *app) {
               ROW_SIZE,
             };
 
-            app_draw_text(app, rect, str_from_cstr("Not Ready"), width / 3, &buffer,
-                          FOREGROUND_COLOR);
+            app_draw_text(app, rect, "Not Ready", width / 3, FOREGROUND_COLOR);
           }
         }
       }
 
       // Popups
-      app_draw_popups(app, width, height, &buffer);
+      app_draw_popups(app, width, height);
 
       // Status
       DrawRectangle(0, height, width, ROW_SIZE, STATUSLINE_COLOR);
@@ -1060,7 +1062,7 @@ void app_loop(App *app) {
     EndDrawing();
   }
 
-  list_free(&buffer);
+  list_free(&app->buffer);
 }
 
 // Main
