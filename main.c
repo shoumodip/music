@@ -320,24 +320,27 @@ Error library_parse(Library *library) {
   return (Error){0};
 }
 
-void library_mark_links(Library *library, Str contents) {
-  char *start = contents.data;
-  if (start) {
-    while (contents.size > 0) {
-      Str link = str_split(&contents, '\n');
-      for (size_t i = 0; i < library->count; i++) {
-        if (artist_mark_link(&library->data[i], link)) {
-          break;
-        }
+void library_mark_links(Library *library) {
+  char *links = LoadFileText(".links");
+  if (!links) {
+    return;
+  }
+
+  Str contents = str_from_cstr(links);
+  while (contents.size > 0) {
+    Str link = str_split(&contents, '\n');
+    for (size_t i = 0; i < library->count; i++) {
+      if (artist_mark_link(&library->data[i], link)) {
+        break;
       }
     }
-    UnloadFileText(start);
+  }
+  UnloadFileText(links);
 
-    for (size_t i = 0; i < library->count; i++) {
-      Artist *artist = &library->data[i];
-      for (size_t j = 0; j < artist->count; j++) {
-        album_mark_ready(&artist->data[j]);
-      }
+  for (size_t i = 0; i < library->count; i++) {
+    Artist *artist = &library->data[i];
+    for (size_t j = 0; j < artist->count; j++) {
+      album_mark_ready(&artist->data[j]);
     }
   }
 
@@ -693,7 +696,7 @@ void app_init(App *app) {
     return;
   }
 
-  library_mark_links(&app->library, str_from_cstr(LoadFileText(".links")));
+  library_mark_links(&app->library);
   if (app->library.pending) {
     if (pthread_create(&app->download_thread, NULL, app_downloader, app)) {
       popups_push(&app->popups, POPUP_GENERAL_ERROR, 0, "Error: could not start downloader thread");
