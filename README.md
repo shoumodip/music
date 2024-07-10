@@ -2,11 +2,7 @@
 Dotfile based music download and management system
 
 ## Build
-Depends on the following:
-
-- [raylib](https://www.raylib.com/)
-- [libmpdclient](https://www.musicpd.org/libs/libmpdclient/)
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) (optional, will be called as an external process)
+- Calls [yt-dlp](https://github.com/yt-dlp/yt-dlp) as an external process, optional
 
 ```build.sh
 $ ./build.sh

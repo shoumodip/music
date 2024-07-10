@@ -1,2 +1,4 @@
 music
 fonts/Roboto-Regular.c
+thirdparty/*
+!thirdparty/*.sh

@@ -1,12 +1,17 @@
 #!/bin/sh
 
-set -xe
+set -e
 
-FONT="fonts/Roboto-Regular"
-[ -f "$FONT.c" ] || xxd -a -i -n font "$FONT.ttf" > "$FONT.c"
+echo "[INFO] Generating font header"
+xxd -a -i -n font fonts/Roboto-Regular.ttf > fonts/Roboto-Regular.c
 
-PKGS="raylib libmpdclient"
-LIBS=`pkg-config --libs $PKGS`
-CFLAGS=`pkg-config --cflags $PKGS`
+[ -d thirdparty/raylib ] || ./thirdparty/raylib.sh
+[ -d thirdparty/libmpdclient ] || ./thirdparty/libmpdclient.sh
 
-cc $CFLAGS -o music main.c $LIBS -lm -lmpdclient -lpthread -lraylib
+echo "[INFO] Building program"
+cc \
+    -Ithirdparty/raylib/include -Ithirdparty/libmpdclient/include \
+    -o music main.c \
+    -Lthirdparty/raylib/lib -l:libraylib.a \
+    -Lthirdparty/libmpdclient/lib -l:libmpdclient.a \
+    -lm
